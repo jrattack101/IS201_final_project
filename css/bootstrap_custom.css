@@ -1,0 +1,11 @@
+.my_personal_bio {
+    font-size: 30px !important;
+}
+
+.my_special_color {
+    color:rgb(32, 50, 209) !important;
+}
+.navbar-custom {
+    background-color: rgb(32, 50, 209) !important;
+    color: white !important;
+  }

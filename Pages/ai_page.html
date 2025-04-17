@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban Board</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        /* Task Dragging Styles */
+        .task.dragging { opacity: 0.5; border: 2px dashed #fff; }
+        .tasks.drag-over { background-color: rgba(255, 255, 255, 0.1); }
+        .task .fa-trash, .task .fa-pencil-alt { pointer-events: none; } /* Prevent icon interference */
+
+        /* List Dragging Styles */
+        .list.dragging-list { opacity: 0.6; border: 2px dashed #60a5fa; /* blue-400 */ }
+        #kanban-board.drag-over-board { /* Optional: Style board when list dragged over */
+             /* background-color: rgba(0, 0, 0, 0.1); */
+        }
+        .list-drag-handle { cursor: grab; }
+        .list-drag-handle:active { cursor: grabbing; }
+
+        /* Hide elements during edit */
+        .list-title-display.editing { display: none; }
+        .list-title-edit.editing { display: block; }
+        .list-title-edit { display: none; } /* Hidden by default */
+
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 to-blue-950 text-gray-200 font-sans min-h-screen p-4 md:p-8">
+
+    <div class="container mx-auto">
+        <h1 class="text-3xl font-bold mb-6 text-center text-white">My Kanban Board</h1>
+
+        <div class="mb-6 flex justify-center space-x-2">
+            <input type="text" id="new-list-name" placeholder="Enter new list name" class="p-2 rounded bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <button id="add-list-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-150 ease-in-out">
+                Add List
+            </button>
+        </div>
+
+        <div id="kanban-board" class="flex space-x-4 overflow-x-auto pb-4 min-h-[60vh]">
+            </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const kanbanBoard = document.getElementById('kanban-board');
+        const newListInput = document.getElementById('new-list-name');
+        const addListBtn = document.getElementById('add-list-btn');
+
+        let draggedTask = null; // Variable to store the task being dragged
+        let draggedList = null; // Variable to store the list being dragged
+
+        // --- Core Functions ---
+
+        /**
+         * Creates a new list element.
+         * @param {string} listName - The name of the list.
+         * @param {string} listId - A unique ID for the list.
+         * @returns {HTMLElement} - The created list element.
+         */
+        function createListElement(listName, listId) {
+            const listElement = document.createElement('div');
+            listElement.id = listId;
+            // Make the list itself draggable
+            listElement.draggable = true;
+            listElement.className = 'list bg-gray-800 p-4 rounded-lg shadow-md w-72 flex-shrink-0 flex flex-col'; // Added flex-shrink-0 and flex layout
+            listElement.innerHTML = `
+                <div class="list-header flex justify-between items-center mb-4">
+                    <div class="list-title-display flex items-center group">
+                        <span class="list-drag-handle text-gray-500 mr-2 cursor-grab group-hover:text-gray-400"><i class="fas fa-grip-vertical"></i></span>
+                        <h2 class="text-xl font-semibold text-white">${listName}</h2>
+                        <button class="edit-list-btn text-gray-400 hover:text-blue-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fas fa-pencil-alt fa-xs"></i>
+                        </button>
+                    </div>
+                    <div class="list-title-edit hidden flex-grow mr-2">
+                        <input type="text" value="${listName}" class="edit-list-input w-full p-1 rounded bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <button class="delete-list-btn text-gray-400 hover:text-red-500">
+                        <i class="fas fa-trash-alt fa-sm"></i>
+                    </button>
+                </div>
+                <div class="tasks space-y-3 min-h-[100px] flex-grow overflow-y-auto" data-list-id="${listId}">
+                    </div>
+                <div class="mt-4">
+                    <input type="text" placeholder="Add new task..." class="new-task-input w-full p-2 rounded bg-gray-700 border border-gray-600 text-white placeholder-gray-400 mb-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <button class="add-task-btn w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-1 px-3 rounded text-sm transition duration-150 ease-in-out">
+                        Add Task
+                    </button>
+                </div>
+            `;
+
+            // --- Event Listeners for List ---
+            const listHeader = listElement.querySelector('.list-header');
+            const titleDisplay = listElement.querySelector('.list-title-display');
+            const titleEditForm = listElement.querySelector('.list-title-edit');
+            const titleInput = listElement.querySelector('.edit-list-input');
+            const listTitleElement = listElement.querySelector('h2');
+            const editBtn = listElement.querySelector('.edit-list-btn');
+            const deleteBtn = listElement.querySelector('.delete-list-btn');
+            const dragHandle = listElement.querySelector('.list-drag-handle');
+
+            // Prevent header buttons/input from triggering list drag
+            editBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+            deleteBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+            titleInput.addEventListener('mousedown', (e) => e.stopPropagation());
+
+
+            // Edit List Name
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent potential drag start
+                titleDisplay.classList.add('editing'); // Hide display
+                titleEditForm.classList.add('editing'); // Show edit form
+                titleInput.focus(); // Focus the input
+                titleInput.select();
+            });
+
+            // Save List Name (on Blur or Enter)
+            titleInput.addEventListener('blur', () => {
+                const newName = titleInput.value.trim();
+                if (newName && newName !== listTitleElement.textContent) {
+                    listTitleElement.textContent = newName;
+                    saveBoardState();
+                } else {
+                    // Reset input if name is empty or unchanged
+                    titleInput.value = listTitleElement.textContent;
+                }
+                titleDisplay.classList.remove('editing');
+                titleEditForm.classList.remove('editing');
+            });
+            titleInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    titleInput.blur(); // Trigger blur to save
+                }
+            });
+             titleInput.addEventListener('keydown', (e) => {
+                 if (e.key === 'Escape') {
+                     titleInput.value = listTitleElement.textContent; // Reset value
+                     titleInput.blur(); // Trigger blur to cancel/hide
+                 }
+             });
+
+
+            // Delete List
+            deleteBtn.addEventListener('click', (e) => {
+                 e.stopPropagation(); // Prevent potential drag start
+                if (confirm(`Are you sure you want to delete the list "${listTitleElement.textContent}" and all its tasks?`)) {
+                    listElement.remove();
+                    saveBoardState();
+                }
+            });
+
+            // --- Event Listeners for Tasks (within this list) ---
+            const addTaskBtn = listElement.querySelector('.add-task-btn');
+            const newTaskInput = listElement.querySelector('.new-task-input');
+            addTaskBtn.addEventListener('click', () => {
+                const taskText = newTaskInput.value.trim();
+                if (taskText) {
+                    const taskContainer = listElement.querySelector('.tasks');
+                    const taskElement = createTaskElement(taskText);
+                    taskContainer.appendChild(taskElement);
+                    newTaskInput.value = ''; // Clear input
+                    saveBoardState();
+                } else {
+                    alert('Please enter task text.');
+                }
+            });
+
+            // Add drag-and-drop listeners for the task container (drop zone)
+            const taskContainer = listElement.querySelector('.tasks');
+            addTaskDropZoneListeners(taskContainer);
+
+            // Add List Drag Listeners
+            addListDragListeners(listElement, dragHandle); // Pass handle
+
+            return listElement;
+        }
+
+        /**
+         * Creates a new task element.
+         * @param {string} taskText - The text content of the task.
+         * @returns {HTMLElement} - The created task element.
+         */
+        function createTaskElement(taskText) {
+            const taskElement = document.createElement('div');
+            const taskId = 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9); // Unique ID
+            taskElement.id = taskId;
+            taskElement.className = 'task bg-gray-700 p-3 rounded shadow cursor-grab active:cursor-grabbing';
+            taskElement.draggable = true; // Make the task draggable
+            taskElement.innerHTML = `
+                <p class="text-gray-200 break-words">${taskText}</p>
+                <button class="delete-task-btn float-right text-gray-400 hover:text-red-500 transition duration-150 ease-in-out -mt-5 ml-1">
+                    <i class="fas fa-trash fa-xs"></i>
+                </button>
+            `;
+
+            // Event listener for deleting the task
+            const deleteBtn = taskElement.querySelector('.delete-task-btn');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent triggering list drag if clicking quickly
+                if (confirm(`Are you sure you want to delete this task: "${taskText}"?`)) {
+                    taskElement.remove();
+                    saveBoardState();
+                }
+            });
+
+            // Add drag-and-drop listeners for the task itself
+            addTaskDragListeners(taskElement);
+
+            return taskElement;
+        }
+
+        // --- Task Drag and Drop Functions ---
+
+        function addTaskDragListeners(task) {
+            task.addEventListener('dragstart', (event) => {
+                // Prevent list drag when starting task drag
+                event.stopPropagation();
+
+                draggedTask = event.target;
+                event.dataTransfer.setData('text/plain', event.target.id);
+                event.dataTransfer.effectAllowed = 'move';
+                setTimeout(() => {
+                    event.target.classList.add('dragging');
+                }, 0);
+                console.log('Task Drag Start:', event.target.id);
+            });
+
+            task.addEventListener('dragend', (event) => {
+                event.stopPropagation();
+                if (draggedTask) { // Check if drag was successful
+                    draggedTask.classList.remove('dragging');
+                }
+                // Clean up drop zone highlights
+                document.querySelectorAll('.tasks.drag-over').forEach(zone => zone.classList.remove('drag-over'));
+                draggedTask = null;
+                console.log('Task Drag End');
+                // Save state potentially handled by drop, but saving here ensures state consistency
+                saveBoardState();
+            });
+        }
+
+        function addTaskDropZoneListeners(zone) {
+            zone.addEventListener('dragover', (event) => {
+                event.preventDefault(); // Allow dropping
+                // Only allow tasks to be dropped here
+                if (draggedTask) {
+                     event.dataTransfer.dropEffect = 'move';
+                     zone.classList.add('drag-over');
+                } else {
+                     event.dataTransfer.dropEffect = 'none'; // Indicate cannot drop lists here
+                }
+                // console.log('Task Drag Over:', zone.dataset.listId);
+            });
+
+            zone.addEventListener('dragleave', (event) => {
+                zone.classList.remove('drag-over');
+                // console.log('Task Drag Leave:', zone.dataset.listId);
+            });
+
+            zone.addEventListener('drop', (event) => {
+                event.preventDefault();
+                event.stopPropagation(); // Prevent drop event from bubbling to the list/board
+                zone.classList.remove('drag-over');
+
+                if (draggedTask && draggedTask.parentElement !== zone) {
+                    const afterElement = getDragAfterElement(zone, event.clientY, '.task:not(.dragging)');
+                    if (afterElement == null) {
+                        zone.appendChild(draggedTask);
+                    } else {
+                        zone.insertBefore(draggedTask, afterElement);
+                    }
+                    console.log('Task Dropped:', draggedTask.id, 'into list:', zone.dataset.listId);
+                    // State saved in dragend
+                }
+            });
+        }
+
+        // --- List Drag and Drop Functions ---
+
+        function addListDragListeners(listElement, handle) {
+             // Use the handle to initiate the drag
+            handle.addEventListener('mousedown', () => {
+                 listElement.draggable = true;
+             });
+             // Disable draggable when mouse is not over handle (allows text selection etc.)
+              listElement.addEventListener('mouseleave', () => {
+                 // Don't disable if currently dragging
+                 if (!listElement.classList.contains('dragging-list')) {
+                    listElement.draggable = false;
+                 }
+             });
+             listElement.addEventListener('mouseup', () => {
+                  listElement.draggable = false; // Ensure draggable is false after interaction if not dragging
+             });
+
+
+            listElement.addEventListener('dragstart', (event) => {
+                // Ensure we are dragging a list, not a task accidentally
+                if (event.target.classList.contains('list')) {
+                    draggedList = event.target;
+                    event.dataTransfer.setData('text/plain', event.target.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                    setTimeout(() => {
+                        event.target.classList.add('dragging-list');
+                    }, 0);
+                    console.log('List Drag Start:', event.target.id);
+                } else {
+                    event.preventDefault(); // Prevent drag if not the list itself
+                }
+            });
+
+            listElement.addEventListener('dragend', (event) => {
+                if (draggedList) { // Check if it was a list drag
+                    draggedList.classList.remove('dragging-list');
+                    listElement.draggable = false; // Reset draggable state
+                }
+                 // Clean up board highlights
+                kanbanBoard.classList.remove('drag-over-board');
+                draggedList = null;
+                console.log('List Drag End');
+                // Save state potentially handled by drop, but saving here ensures state consistency
+                saveBoardState();
+            });
+
+             // Drag over the list itself (less relevant now we drop on board, but good practice)
+             listElement.addEventListener('dragover', (event) => {
+                 event.preventDefault();
+                 if (draggedList && draggedList !== listElement) {
+                     event.dataTransfer.dropEffect = 'move';
+                 } else if (draggedTask) {
+                     event.dataTransfer.dropEffect = 'none'; // Don't allow tasks dropped directly on list bg
+                 }
+             });
+
+             // Drop on the list itself (less relevant now we drop on board)
+             listElement.addEventListener('drop', (event) => {
+                 event.preventDefault();
+                 event.stopPropagation(); // Important: Prevent board drop handler firing too
+                 // Logic to reorder if dropping directly onto another list could go here,
+                 // but dropping onto the board container is usually smoother UX.
+                 console.log("Drop directly onto list - handled by board drop instead");
+             });
+        }
+
+        // Add listeners to the main board for list dropping
+        function addBoardDropZoneListeners(board) {
+            board.addEventListener('dragover', (event) => {
+                event.preventDefault(); // Allow dropping
+                if (draggedList) { // Only allow lists to be dropped on the board itself
+                     event.dataTransfer.dropEffect = 'move';
+                     board.classList.add('drag-over-board'); // Optional highlight
+
+                     // Determine position for the dragged list
+                    const afterElement = getDragAfterElement(board, event.clientX, '.list:not(.dragging-list)');
+                    const currentList = document.querySelector('.dragging-list'); // The list being dragged
+
+                    // Insert placeholder or move directly? Moving directly is simpler for now
+                    if (currentList) { // Ensure draggedList is still valid
+                        if (afterElement == null) {
+                            board.appendChild(currentList);
+                        } else {
+                            board.insertBefore(currentList, afterElement);
+                        }
+                    }
+
+                } else {
+                    event.dataTransfer.dropEffect = 'none'; // No tasks on board bg
+                }
+            });
+
+             board.addEventListener('dragleave', (event) => {
+                 // Check if leaving board container itself, not just moving over children
+                 if (event.target === board) {
+                     board.classList.remove('drag-over-board');
+                 }
+             });
+
+
+            board.addEventListener('drop', (event) => {
+                event.preventDefault();
+                board.classList.remove('drag-over-board');
+                if (draggedList) {
+                    // The actual insertion happens during 'dragover' for immediate feedback.
+                    // Drop just finalizes it. We could move the insertion logic here too.
+                    console.log('List Dropped on Board:', draggedList.id);
+                    // State saved in dragend
+                }
+            });
+        }
+
+
+        /**
+         * Generic function to find the element to insert before during drag.
+         * @param {HTMLElement} container - The container element.
+         * @param {number} coordinate - The mouse coordinate (clientY for vertical, clientX for horizontal).
+         * @param {string} selector - The CSS selector for draggable items in the container.
+         * @returns {HTMLElement|null} - The element to insert before, or null to append at the end.
+         */
+        function getDragAfterElement(container, coordinate, selector) {
+            const draggableElements = [...container.querySelectorAll(selector)];
+
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                // Determine axis based on container (simple check: is it the main board?)
+                const isHorizontal = container.id === 'kanban-board';
+                const pos = isHorizontal ? box.left : box.top;
+                const dimension = isHorizontal ? box.width : box.height;
+                const offset = coordinate - pos - dimension / 2;
+
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+
+        // --- Event Listeners ---
+
+        // Add new list
+        addListBtn.addEventListener('click', () => {
+            const listName = newListInput.value.trim();
+            if (listName) {
+                const listId = 'list-' + Date.now();
+                const newList = createListElement(listName, listId);
+                kanbanBoard.appendChild(newList);
+                newListInput.value = '';
+                saveBoardState();
+            } else {
+                alert('Please enter a list name.');
+            }
+        });
+
+        // Allow adding list with Enter key
+        newListInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addListBtn.click();
+            }
+        });
+
+        // --- Local Storage Persistence ---
+
+        function saveBoardState() {
+            const lists = [];
+            document.querySelectorAll('.list').forEach(listElement => {
+                const list = {
+                    id: listElement.id,
+                    name: listElement.querySelector('h2').textContent, // Get name from h2
+                    tasks: []
+                };
+                listElement.querySelectorAll('.task').forEach(taskElement => {
+                    list.tasks.push({
+                        id: taskElement.id,
+                        text: taskElement.querySelector('p').textContent
+                    });
+                });
+                lists.push(list);
+            });
+            localStorage.setItem('kanbanBoardState', JSON.stringify(lists));
+            console.log('Board state saved.');
+        }
+
+        function loadBoardState() {
+            const savedState = localStorage.getItem('kanbanBoardState');
+            kanbanBoard.innerHTML = ''; // Clear board first
+
+            let listsToLoad = [];
+            if (savedState) {
+                try {
+                    listsToLoad = JSON.parse(savedState);
+                } catch (e) {
+                    console.error("Error parsing saved state:", e);
+                    localStorage.removeItem('kanbanBoardState'); // Clear corrupted state
+                    listsToLoad = []; // Fallback to default
+                }
+            }
+
+            if (!listsToLoad || listsToLoad.length === 0) {
+                console.log('Loading default lists.');
+                listsToLoad = [
+                    { id: 'list-todo-' + Date.now(), name: 'To Do', tasks: [{ id: 'task-default-1', text: 'Drag me!' }] },
+                    { id: 'list-inprogress-' + Date.now(), name: 'In Progress', tasks: [] },
+                    { id: 'list-done-' + Date.now(), name: 'Done', tasks: [] }
+                ];
+                 // Don't save default state immediately, let user interaction trigger first save
+            } else {
+                 console.log('Board state loaded from localStorage.');
+            }
+
+
+            listsToLoad.forEach(listData => {
+                // Ensure listData has necessary properties, provide defaults if missing
+                const id = listData.id || 'list-' + Date.now();
+                const name = listData.name || 'Untitled List';
+                const tasks = listData.tasks || [];
+
+                const listElement = createListElement(name, id);
+                const taskContainer = listElement.querySelector('.tasks');
+                tasks.forEach(taskData => {
+                    if (taskData && taskData.text) { // Basic validation for task data
+                        const taskElement = createTaskElement(taskData.text);
+                        // Optional: Restore original task ID if needed, but new ones generally fine
+                        // taskElement.id = taskData.id || 'task-' + Date.now();
+                        taskContainer.appendChild(taskElement);
+                    }
+                });
+                kanbanBoard.appendChild(listElement);
+            });
+
+             // Add drop zone listeners to the main board *after* loading/creating lists
+             addBoardDropZoneListeners(kanbanBoard);
+        }
+
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', loadBoardState);
+
+    </script>
+
+<a href="scratch_page.html"> Back to Home Page</a>
+
+</body>
+</html>

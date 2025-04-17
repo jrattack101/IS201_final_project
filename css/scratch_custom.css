@@ -1,0 +1,66 @@
+.background_custom {
+    background-color: rgb(28, 58, 225);
+}
+
+.custom_font_color {
+    color: aliceblue;
+}
+
+.custom_font {
+    font-family: 'Times New Roman', Times, serif;
+}
+
+.custom_header {
+    font-weight: 200;
+    font-family: 'Times New Roman', Times, serif;
+}
+
+.common_div{
+    background-color:aliceblue;
+    border: 2px solid;
+    position: absolute;
+    padding: 2px;
+}
+
+.header_div {
+    background-color:rgb(42, 106, 244); 
+    top: 5px;
+    left: 5px;
+    right: 5px;
+    height: 100px;
+    text-align: center;
+    line-height: 100px;
+    font-size: 35px;
+}
+
+.left_div {
+    /* 100px + 5px + 5px + 2px + 2px*/
+    background-color:rgb(42, 106, 244); 
+    top: 114px;
+    left: 5px;
+    width: 100px;
+    bottom: 114px;
+}
+
+.right_div { 
+    background-color:rgb(42, 106, 244); 
+    top: 114px;
+    right: 5px;
+    width: 100px;
+    bottom: 114px;
+}
+
+.main_div {
+    top: 114px;
+    left: 114px;
+    right: 114px;
+    bottom: 114px;
+    overflow: auto;
+}
+
+.footer_div { 
+    left: 5px;
+    right: 5px;
+    bottom: 5px;
+    height: 100px;
+}
